@@ -184,7 +184,7 @@ pieces don't turn back into Pawns when captured.
 
  ;(engine "..\Release\EngineInterface.dll") 
  (board
-  (image "images\crazyhouse.bmp")
+  (image "images\recyclechess\recycle.bmp")
   (grid
    (start-rectangle 6 28 56 78)
    (dimensions
