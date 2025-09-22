@@ -9,13 +9,10 @@
 
 (define put-in-hand 
   mark 
-  (set-flag pPawn promoted-pawn?)
   cascade 
   OFF next 
   (while (and not-empty? (not-position? OFF)) next) 
   to 
-  change-owner
-  (if (flag? pPawn) (change-type Pawn))
   back
 )
 
@@ -35,32 +32,65 @@
 
 (define leap (
    $1
-   (if not-empty? (put-in-hand))
-   add
-))
+   (verify friend?)
+   (verify (not-piece? King))
+   (put-in-hand)
+   add))
+
+(define leape (
+   $1
+   (verify not-friend?)
+   add))
 
 (define leap2 (
    $1 $2
-   (if not-empty? (put-in-hand))
-   add
-))
+ (verify friend?)
+   (verify (not-piece? King))
+   (put-in-hand)
+   add))
+  
+(define leap2e (
+   $1 $2
+(verify not-friend?)
+ add))
 
 (define ride  (
    $1 (while empty? add $1)
-   (if not-empty? (put-in-hand))
+   (verify friend?)
+   (verify (not-piece? King))
    (set-attribute unmoved-rook? false)
-   add
-))
+   (put-in-hand)
+   add))
+
+(define ridee  (
+   $1 (while empty? add $1)
+   (verify not-friend?)
+   (set-attribute unmoved-rook? false)
+   add))
+
+(define slide  (
+   $1 (while empty? add $1)
+   (verify friend?)
+   (verify (not-piece? King))
+   (put-in-hand)
+   add))
+(define slidee  (
+   $1 (while empty? add $1)
+   (verify not-friend?)
+   add))
 
 ; PIECE MOVE SETS
 
-(define knight-moves (leap2 n nw) (leap2 n ne) (leap2 e ne) (leap2 e se) (leap2 s se) (leap2 s sw) (leap2 w sw) (leap2 w nw))
-(define bishop-moves (ride ne) (ride nw) (ride se) (ride sw))
-(define rook-moves (ride n) (ride s) (ride e) (ride w))
+(define knight-moves (leap2 n nw) (leap2 n ne) (leap2 e ne) (leap2 e se) (leap2 s se) 
+(leap2 s sw) (leap2 w sw) (leap2 w nw) (leap2e n nw) (leap2e n ne) (leap2e e ne) (leap2e e se) (leap2e s se) 
+(leap2e s sw) (leap2e w sw) (leap2e w nw))
+(define bishop-moves (slide ne) (slide nw) (slide se) (slide sw) 
+(slidee ne) (slidee nw) (slidee se) (slidee sw))
+(define rook-moves (ride n) (ride s) (ride e) (ride w)(ridee n) (ridee s) (ridee e) (ridee w))
+(define qrook-moves (slide n) (slide s) (slide e) (slide w) (slidee n) (slidee s) (slidee e) (slidee w))
 
-(define King-leap ($1 
-(if not-empty? (put-in-hand))
-   (set-attribute never-moved? false) add))
+(define King-leap ($1 (verify not-empty?) (if friend? (put-in-hand)) (set-attribute never-moved? false) add))
+(define King-leape ($1 (verify empty?) (set-attribute never-moved? false) add))
 
 (define O-O
   ( (verify never-moved?)
@@ -120,24 +150,26 @@
      )
 )
 
-(define Pawn-add (if (in-zone? promotion-zone) (set-attribute promoted-pawn? true) (add Rook Knight Bishop Queen) else add))
+(define Pawn-add (if (in-zone? promotion-zone) capture else add))
 
 (define Pawn-move ($1 (verify empty?) (Pawn-add) (verify (in-zone? third-rank)) $1
       (verify empty?) add))
 
-(define promote to (change-type $1) (set-attribute promoted-pawn? true) (put-in-hand) add)
+;(define promote to (change-type $1) (set-attribute promoted-pawn? $2) (put-in-hand) add)
 
-(define Pawn-capture ($1 (verify not-empty?) (if (in-zone? promotion-zone) (promote Rook) (promote Queen) (promote Bishop) (promote Knight) else (put-in-hand) add)))
-
+(define Pawn-capture ($1 (verify friend?)(verify (not-piece? King)) (put-in-hand) (if (in-zone? promotion-zone) capture) add))
+(define Pawn-capturee ($1 (verify enemy?) add (if (in-zone? promotion-zone) capture)))
 (define En-Passant ($1 (verify enemy?) (verify last-to?) (verify (piece? Pawn))
     n (verify (last-from? n)) to s (put-in-hand) add))
 
 (game
- (title "RecycleChess")
- (description "Recyclechess, which is very similar to Chessgi, is a two-player version of Bughouse. It is played like regular Chess with the following exceptions:\\
+ (title "Crazyhouse")
+ (description "Crazyhouse, which is very similar to Chessgi, is a two-player version of Bughouse. It is played like regular Chess with the following exceptions:\\
 1. Captured pieces change sides and on a subsequent turn may be dropped on an empty square by the player who has captured the piece.\\
 2. Pawns may not be dropped on the first or last rank.\\
-3. Promoted pieces turn back into Pawns when captured.\\
+3. Promoted pieces turn back into Pawns when captured.\\\
+Loop Chess has the same rules, except that promoted
+pieces don't turn back into Pawns when captured.
 ")
 
  (history 
@@ -149,9 +181,10 @@
  (players White Black)
  (turn-order White Black)
  (pass-turn false)
- 
+
+ ;(engine "..\Release\EngineInterface.dll") 
  (board
-  (image "images\recyclechess\recycle.bmp")
+  (image "images\crazyhouse.bmp")
   (grid
    (start-rectangle 6 28 56 78)
    (dimensions
@@ -163,7 +196,6 @@
 	       )
    )
   (symmetry Black (n s)(s n) (nw sw)(sw nw) (ne se)(se ne) (next prev) (prev next))
-
   (dummy OFF END)
   (kill-positions x1 x2 x3 x4 x5 x6 x7 x8 z1 z2 z3 z4 z5 z6 z7 z8)
   (unlink Oa8 Oa7 Oa6 Oa5 Oa4 Oa3 Oa2 Oa1 Ob8 Ob7 Ob6 Ob5 Ob4 Ob3 Ob2 Ob1 Oc8 Oc7 Oc6 Oc5 Oc4 Oc3 Oc2 Oc1 Od8 Od7 Od6 Od5 Od4 Od3 Od2 Od1)
@@ -224,7 +256,7 @@
    (Queen d1)
    (King e1)
    )
-  (Black        
+  (Black
    (Pawn a7 b7 c7 d7 e7 f7 g7 h7)
    (Knight b8 g8)
    (Bishop c8 f8)
@@ -248,7 +280,7 @@ line.  It may not leap over other pieces.")
  (name Pawn)
  (help "Pawn: moves forward, captures diagonally, can promote on 8th row")
  (description "Pawn\A Pawn can move straight ahead one square, or two squares from its starting position.  A Pawn captures by moving one square ahead and diagonally.  If a Pawn reaches the far rank, it promotes to a Knight, Bishop, or Rook, but not to any compound piece.  On rare occasions Pawns can also execute a move called `En Passant`, or `in passing`.  This allows a Pawn to take an enemy Pawn that has just moved two squares.")
-  (image White "images\chess\WPawn.bmp" Black "images\chess\BPawn.bmp")
+ (image White "images\chess\WPawn.bmp" Black "images\chess\BPawn.bmp")
  (moves
   (Pawn-capture nw)
   (Pawn-capture ne)
@@ -264,7 +296,7 @@ line.  It may not leap over other pieces.")
  (help "Knight: moves like an `L`, 2 squares one way and one the other")
  (description "Knight\A Knight moves like an `L`, two squares vertically plus one horizontally, or two squares horizontally plus one vertically. It hops over any pieces on the way.")
  (attribute promoted-pawn? false)
-  (image White "images\chess\WKnight.bmp" Black "images\chess\BKnight.bmp")
+ (image White "images\chess\WKnight.bmp" Black "images\chess\BKnight.bmp")
  (moves (knight-moves) (deploy Knight))
  )
 
@@ -273,7 +305,7 @@ line.  It may not leap over other pieces.")
  (help "Bishop: slides diagonally any number of squares")
  (description "Bishop\A Bishop moves any number of squares on a diagonal. It may not leap over other pieces.")
  (attribute promoted-pawn? false)
-  (image White "images\chess\WBishop.bmp" Black "images\chess\BBishop.bmp")
+ (image White "images\chess\WBishop.bmp" Black "images\chess\BBishop.bmp")
  (moves (bishop-moves) (deploy Bishop))
  )
   
@@ -281,7 +313,7 @@ line.  It may not leap over other pieces.")
  (name Rook)
  (help "Rook: slides any number of squares along the row or column.")
  (description "Rook\A Rook moves any number of squares orthogonally on a rank or a file.  It may not leap over other pieces (except the King during a Castling move).")
-  (image White "images\chess\WRook.bmp" Black "images\chess\BRook.bmp")
+ (image White "images\chess\WRook.bmp" Black "images\chess\BRook.bmp")
  (attribute promoted-pawn? false)
  (attribute unmoved-rook? true)
  (moves (rook-moves) (deploy Rook))
@@ -291,7 +323,7 @@ line.  It may not leap over other pieces.")
  (name King)
  (help "King: steps 1 square in any direction to a safe square")
  (description "King\A King can move to any adjacent square, but never to a square where it can be captured.  It may also `castle` with the Rook if neither the Rook nor King has moved yet and there is nothing in between them.  In castling the King moves two squares nearer the Rook and the Rook leaps to the far side of the King.  You may not castle out of or through check, or if the King or Rook involved has previously moved.")
-  (image White "images\chess\WKing.bmp" Black "images\chess\BKing.bmp")
+ (image White "images\chess\WKing.bmp" Black "images\chess\BKing.bmp")
  (attribute promoted-pawn? false)
  (attribute never-moved? true)
  (moves
@@ -303,6 +335,14 @@ line.  It may not leap over other pieces.")
   (King-leap nw)
   (King-leap se)
   (King-leap sw)
+(King-leape n)
+  (King-leape e)
+  (King-leape s)
+  (King-leape w)
+  (King-leape ne)
+  (King-leape nw)
+  (King-leape se)
+  (King-leape sw)
   (O-O)
   (O-O-O)
   )
@@ -311,3 +351,28 @@ line.  It may not leap over other pieces.")
 (loss-condition (White Black) (checkmated King))
 (draw-condition (White Black) stalemated)
 )
+
+;------------------------------------------------------
+
+(variant 
+(title "Recycle Chess")
+(default)
+(piece
+ (name Pawn)
+ (help "Pawn: moves forward, captures diagonally, can promote on 8th row")
+ (description "Pawn\A Pawn can move straight ahead one square, or two squares from its starting position.  A Pawn captures by moving one square ahead and diagonally.  If a Pawn reaches the far rank, it promotes to a Knight, Bishop, or Rook, but not to any compound piece.  On rare occasions Pawns can also execute a move called `En Passant`, or `in passing`.  This allows a Pawn to take an enemy Pawn that has just moved two squares.")
+ (image White "images\chess\WPawn.bmp" Black "images\chess\BPawn.bmp")
+ (moves
+  (Pawn-capture nw)
+  (Pawn-capture ne)
+  (Pawn-capturee nw)
+  (Pawn-capturee ne)
+  (Pawn-move n)
+  (En-Passant e)
+  (En-Passant w)
+  (pawn-deploy)
+  )
+ )
+)
+
+
