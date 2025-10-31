@@ -444,6 +444,10 @@ InitGame()
  int i,j;
 
  for(i=0;i<16*BH;i++)b[i]=0;
+ /* Clear hand areas for gothic/capablanca */
+ if(CurrentVariant==4 || CurrentVariant==5) {
+   for(i=128;i<160;i++)b[i]=0;
+ }
  K=BW;W(K--)
  {b[K]=oo[K+16]+16;b[K+112]=oo[K];b[K+16]=18;b[K+96]=1; /* initial board setup*/
   L=8;W(L--)b[16*L+K+257]=(K-BW/2)*(K-BW/2)+(L-3.5)*(L-3.5); /* center-pts table   */

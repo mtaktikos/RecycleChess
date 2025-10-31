@@ -1,0 +1,5 @@
+xboard
+protover 2
+variant gothic
+new
+quit
