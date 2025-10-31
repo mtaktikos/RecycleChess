@@ -288,6 +288,61 @@ int k,q,l,e,E,z,n;      /* (q,l)=window, e=current eval. score, E=e.p. sqr.*/
    }}
    if((++x&15)>=BW)x=x+16&112;                 /* next sqr. of board, wrap */
   }W(x-B);           
+  /* Generate drop moves from hand for gothic/capablanca */
+  if((CurrentVariant==4 || CurrentVariant==5) && d>1) {
+    int handBase = (k==WHITE) ? 128 : 144;
+    int slot, dropSquare;
+    /* Check if we're executing a pending drop move */
+    if(z&S && K-I && K>=128) {
+      slot = K;
+      dropSquare = L;
+      if(b[slot] && (b[slot]&64) && b[dropSquare]==0) {
+        int handPiece = b[slot];
+        int pieceType = handPiece&15;
+        int rank = dropSquare>>4;
+        /* Check pawn drop restrictions */
+        if(!((pieceType==1 || pieceType==2) && (rank==0 || rank==7))) {
+          /* Execute drop */
+          b[slot] = 0;
+          b[dropSquare] = handPiece & ~64;
+          Q=-e;O=2*S;LL=L;
+          a->D=99;a->V=0;
+          return l;
+        }
+      }
+    }
+    /* Otherwise, search for drop moves */
+    for(slot=handBase; slot<handBase+16; slot++) {
+      if(b[slot] && (b[slot]&64)) {  /* hand piece exists */
+        int handPiece = b[slot];
+        int pieceType = handPiece&15;
+        /* Try dropping on each empty square */
+        for(dropSquare=0; dropSquare<128; dropSquare++) {
+          if((dropSquare&15)<BW && b[dropSquare]==0) {  /* empty square on board */
+            int rank = dropSquare>>4;
+            /* Pawns can't be dropped on 1st or 8th rank */
+            if((pieceType==1 || pieceType==2) && (rank==0 || rank==7))
+              continue;
+            /* Simulate drop: remove from hand, place on board */
+            b[slot] = 0;
+            b[dropSquare] = handPiece & ~64;  /* remove hand flag */
+            J+=J(0);Z+=J(4);
+            /* Evaluate position after drop */
+            v=-D(16-k,-l,-m,-e,2*S,dropSquare,d-1);
+            J=f;Z=g;
+            /* Undo drop */
+            b[dropSquare] = 0;
+            b[slot] = handPiece;
+            if(v>m) {
+              m=v;
+              /* Encode drop move: from hand slot to drop square */
+              X=slot;Y=dropSquare|S;
+            }
+          }
+        }
+      }
+    }
+  }
 C:m=m+I|P==I?m:(X=Y=0);  /*** check test thru NM  best loses K: (stale)mate*/
   if(a->D<99)                                  /* protect game history     */
    a->K=Z,a->V=m,a->D=d,a->X=X,                /* always store in hash tab */
@@ -533,8 +588,19 @@ int main(int argc, char **argv)
                                  continue;
                             } else UnderProm = -1;
                             printf("move ");
-                            printf("%c%c%c%c",'a'+(K&15),'0'+BH-(K>>4),
+                            /* Check if this is a drop move (from hand) */
+                            if((CurrentVariant==4 || CurrentVariant==5) && K>=128) {
+                                /* Drop move: output as P@e4 format */
+                                int handPiece = b[K];
+                                int pieceType = handPiece&15;
+                                /* Convert piece type to character */
+                                char pieceChar = n[pieceType];
+                                printf("%c@%c%c", pieceChar, 'a'+(L&15), '0'+BH-(L>>4));
+                            } else {
+                                /* Regular move */
+                                printf("%c%c%c%c",'a'+(K&15),'0'+BH-(K>>4),
                                           'a'+(L&15),'0'+BH-(L>>4));
+                            }
                             printf("\n");
                             m = GetTickCount() - Ticks;
 
@@ -826,7 +892,35 @@ int main(int argc, char **argv)
                     case 'h':  PromPiece=-7; break;
                     case 'g':  PromPiece=-8; break;
                 }
-                {char *c=line; K=c[0]-16*c[1]+799;L=c[2]-16*c[3]+799; }
+                /* Parse move - check for drop format (P@e4) */
+                if(line[1]=='@' && (CurrentVariant==4 || CurrentVariant==5)) {
+                    /* Drop move format: piece@square */
+                    char pieceChar = line[0];
+                    int pieceType = 0;
+                    /* Find piece type from character */
+                    for(i=0; i<16; i++) {
+                        if(n[i] == pieceChar || n[i+16] == pieceChar) {
+                            pieceType = i;
+                            break;
+                        }
+                    }
+                    /* Find piece in hand */
+                    int handBase = (Side==WHITE) ? 128 : 144;
+                    for(i=handBase; i<handBase+16; i++) {
+                        if(b[i] && (b[i]&15)==pieceType && (b[i]&64)) {
+                            K = i;  /* hand slot */
+                            break;
+                        }
+                    }
+                    /* Parse target square */
+                    char *c = line+2;
+                    L = c[0]-16*c[1]+799;
+                    m = 0;  /* valid move format */
+                } else {
+                    /* Regular move format */
+                    char *c=line;
+                    K=c[0]-16*c[1]+799;L=c[2]-16*c[3]+799;
+                }
                 if (m)
                         /* doesn't have move syntax */
 			printf("Error (unknown command): %s\n", command);
