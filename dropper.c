@@ -69,9 +69,9 @@ int nrRanks, nrFiles, specials, pinCodes, maxDrop, moveSP, pawn, queen, lanceMas
 int  frontier, killZone, impasse, frontierPenalty, killPenalty;
 int rawInts[21*22], pieceValues[96], pieceCode[96];
 signed char   rawChar[32*22], steps[512];
-unsigned char rawByte[102*22], firstDir[64], rawBulk[98], handSlot[97], promoCode[96], aVal[64], vVal[64], rawLocation[96+23], handBulk[96];
-long long int handKey[96], pawnKey;
-int handVal[96], rawGain[97];
+unsigned char rawByte[102*22], firstDir[64], rawBulk[98], handSlot[97], handSlotSame[97], promoCode[96], aVal[64], vVal[64], rawLocation[96+23], handBulk[96];
+long long int handKey[96], handKeySame[96], pawnKey;
+int handVal[96], handValSame[96], rawGain[97];
 unsigned int moveStack[500*MAXPLY];
 int killers[MAXPLY][2];
 int path[MAXPLY], deprec[MAXPLY];
@@ -293,7 +293,7 @@ signed char steps[] = {
 // first of unprom section is always king (which in reality is type 31, while unprom = 0-15 and prom = 16-31)
 
 int
-chessValues[] = { 100, 285, 290, 375, 600, -1, 700, 310, 315, 450, -1, 150, 320, 305, 400, 600, -1 },
+chessValues[] = { 100, 285, 290, 375, 600, -1, 700, 310, 315, 450, -1, 600, 685, 590, 675, 700, -1 },
 shogiValues[]   = { 30, 150, 240, 270, 390, 450, 180, -1, 330, 288, 276, 270, 465, 540, 282, -1,  60, 270, 300, 330, 495, 570, 285, -1 },
 miniValues[]    = { 60, 110, 195, 237, 243, 330,      -1, 297, 245, 240, 237, 375, 420,      -1, 120, 200, 243, 252, 315, 390, -1 },
 judkinValues[]  = { 50, 115, 240, 270, 325, 390, 180, -1, 330, 245, 276, 270, 420, 480, 282, -1,  60, 220, 300, 330, 450, 510, 285, -1 },
@@ -499,8 +499,10 @@ GameInit (char *name)
 	    promoInc[sqr] = 0; promoInc[sqr+11] = 16;
 	    dropType[sqr] = 0; dropType[sqr+11] = piece + 1; // map counters to pieces
 	    if(!(piece & 16) && piece < COLOR) {             // promotable piece
-		handSlot[piece ^ COLOR] = sqr + 11;          // map pieces back to the counter
+		handSlot[piece ^ COLOR] = sqr + 11;          // map pieces back to the counter (flipped color)
 		handSlot[piece+16 ^ COLOR] = sqr + 11;       // also the piece that demotes to it
+		handSlotSame[piece] = sqr + 11;              // map pieces to same-color counter
+		handSlotSame[piece+16] = sqr + 11;           // also the piece that demotes to it
 	    }
 	    zoneTab[sqr] = 0;
 	}
@@ -514,6 +516,8 @@ GameInit (char *name)
 	promoInc[3*22+11+f] = promoInc[4*22+11+f] += 3;
 	handSlot[WHITE + 16 + f] = handSlot[WHITE]; // all promoted pieces demote to Pawn
 	handSlot[BLACK + 16 + f] = handSlot[BLACK];
+	handSlotSame[WHITE + 16 + f] = handSlotSame[WHITE]; // same for same-color captures
+	handSlotSame[BLACK + 16 + f] = handSlotSame[BLACK];
 	pawnBulk[WHITE] = 0; // no limit to Pawns per file in Crazyhouse
 	zoneTab[1*22+f] = zoneTab[6*22+f] = Z_DOUBLE;
 	// special Pawn moves
@@ -544,9 +548,14 @@ GameInit (char *name)
 
     // precalculated hash keys for transferring to holdings
     handSlot[0] = 11*21 + 4;     // map empty square safely away from edges
+    handSlotSame[0] = 11*21 + 4;
+    // Initialize all handSlotSame to safe value first
+    for(f=0; f<97; f++) if(handSlotSame[f] == 0) handSlotSame[f] = 11*21 + 4;
     for(f=WHITE; f<COLOR; f++) { // all pieces
-	r = handSlot[f];         // location in holdings where piece goes
+	r = handSlot[f];         // location in holdings where piece goes (flipped color)
 	handKey[f] = pieceKey[-1]*squareKey[r];
+	r = handSlotSame[f];     // location in holdings for same-color captures
+	handKeySame[f] = pieceKey[-1]*squareKey[r];
     }
 
     // move-generation tables
@@ -584,6 +593,22 @@ GameInit (char *name)
 	handBulk[WHITE+i+16] = handBulk[BLACK+i+16] = pieceValues[demoted]/80;
     }
     for(i=0; i<16; i++) handVal[WHITE+i] = handVal[BLACK+i] += pieceValues[WHITE+i];  // gain by capturing base piece
+    // For same-color captures, piece doesn't flip color, so gain is just in-hand bonus
+    // Initialize all handValSame to 0 first
+    for(i=0; i<96; i++) handValSame[i] = 0;
+    for(i=0; i<96; i++) handKeySame[i] = 0;
+    for(i=0, ip=variants[v].values; *ip >= 0; ip++); ip++; // skip to promoted values
+    for(; *ip >= 0; ip++); ip++; // skip to in-hand values
+    for(i=0; *ip >= 0; i++) {
+	handValSame[WHITE+i] = handValSame[BLACK+i] = *ip; // in-hand value as gain for same-color capture
+	ip++;
+    }
+    for(i=0; i<16; i++) {
+	int demoted = dropType[handSlot[WHITE+i+16]]-1;  // use regular handSlot for promoted pieces
+	if(demoted >= 0 && demoted < 96) {
+	    handValSame[WHITE+i+16] = handValSame[BLACK+i+16] = pieceValues[WHITE+i+16] - pieceValues[demoted] + handValSame[demoted];
+	}
+    }
     for(i=0; i<16; i++) {
 	int demoted = dropType[handSlot[WHITE+i+16]]-1; // piece type after demotion (could be Pawn, in Chess)
 	promoGain[WHITE+i+16] = promoGain[BLACK+i+16] = pieceValues[WHITE+i+16] - pieceValues[demoted];
@@ -818,7 +843,8 @@ MoveGen (int stm, MoveStack *m, int castle)
 		    int move, promote, slot;
 		    victim = board[to += step];
 		    attacks[to] = d; // keep track of attacked squares (even with own piece)
-		    if(victim & stm) break; // captures own piece
+		    if((victim & stm) && (victim & ~COLOR) == 31) break; // cannot capture own King
+		    // Allow capturing own pieces (except King)
 		    if(range & 2) { // divergent move: must be FIDE Pawn
 			if(to == m->epSqr) { // reaches e.p. square: must be through diagonal move, and e.p. square is always empty
 			    moveStack[--m->firstMove] = to + 4*22+11 + 44*(stm == BLACK) | from << 8 | vVal[0] << 24;
@@ -1076,12 +1102,21 @@ MakeMove (StackFrame *f, int move)
     }
     board[f->fromSqr] = f->fromPiece - f->mutation;                     // 0 or (for drops) decremented count
     board[f->toSqr]   = f->toPiece;
-    board[handSlot[f->victim]]--; // put victim in holdings
+    // Check if capturing own piece (same color)
+    if(f->victim && (f->victim & COLOR) == (f->toPiece & COLOR)) {
+	// Same-color capture: piece stays same color in hand
+	board[handSlotSame[f->victim]]--; // put victim in holdings (same color)
+	f->newEval += promoGain[f->toPiece] - promoGain[f->mutation]                                        + handValSame[f->victim] +
+		      PST[f->toPiece][f->toSqr] - PST[f->mutation][f->fromSqr] + PST[f->victim][f->captSqr];
+	f->newKey  += KEY(f->toPiece, f->toSqr) - KEY(f->mutation, f->fromSqr) - KEY(f->victim, f->captSqr) + handKeySame[f->victim];
+    } else {
+	// Normal capture: piece flips color
+	board[handSlot[f->victim]]--; // put victim in holdings (flipped color)
+	f->newEval += promoGain[f->toPiece] - promoGain[f->mutation]                                        + handVal[f->victim] +
+		      PST[f->toPiece][f->toSqr] - PST[f->mutation][f->fromSqr] + PST[f->victim][f->captSqr];
+	f->newKey  += KEY(f->toPiece, f->toSqr) - KEY(f->mutation, f->fromSqr) - KEY(f->victim, f->captSqr) + handKey[f->victim];
+    }
 //printf("# capt=%02x vic=%02x slot=%02x\n", f->captSqr, f->victim, handSlot[f->victim]);
-
-    f->newEval += promoGain[f->toPiece] - promoGain[f->mutation]                                        + handVal[f->victim] +
-		  PST[f->toPiece][f->toSqr] - PST[f->mutation][f->fromSqr] + PST[f->victim][f->captSqr];
-    f->newKey  += KEY(f->toPiece, f->toSqr) - KEY(f->mutation, f->fromSqr) - KEY(f->victim, f->captSqr) + handKey[f->victim];
     stm = f->toPiece & COLOR;
     f->bulk = promoGain[stm+30]; promoGain[stm+30] += handBulk[f->victim] - dropBulk[f->fromSqr];
     location[f->toPiece] = f->toSqr;
@@ -1097,7 +1132,12 @@ UnMake (StackFrame *f)
     board[f->toSqr]   = f->savePiece; // put back the regularly captured piece (for castling that captured by Rook)
     board[f->captSqr] = f->victim;    // differs from toSqr on e.p. (Pawn to-square) and castling, (King to-square) and should be cleared then
     board[f->fromSqr] = f->fromPiece; //          and the mover
-    board[handSlot[f->victim]]++;
+    // Restore victim to hand (same location it was taken from)
+    if(f->victim && (f->victim & COLOR) == (f->toPiece & COLOR)) {
+	board[handSlotSame[f->victim]]++; // same-color capture
+    } else {
+	board[handSlot[f->victim]]++;     // normal capture (flipped color)
+    }
     promoGain[(f->toPiece & COLOR)+30] = f->bulk;
     location[f->fromPiece] = f->fromSqr;
 }
