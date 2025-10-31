@@ -223,6 +223,8 @@ int k,q,l,e,E,z,n;      /* (q,l)=window, e=current eval. score, E=e.p. sqr.*/
               break;
             }
           }
+          /* Note: If all 16 hand slots are full, piece is silently discarded */
+          /* In practice, this is unlikely with normal play */
         }
         b[G]=b[H]=b[x]=0;b[y]=u|32;            /* do move, set non-virgin  */
         if(!(G&S))b[FF]=k+6,v+=50;             /* castling: put R & score  */
