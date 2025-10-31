@@ -549,6 +549,8 @@ GameInit (char *name)
     // precalculated hash keys for transferring to holdings
     handSlot[0] = 11*21 + 4;     // map empty square safely away from edges
     handSlotSame[0] = 11*21 + 4;
+    // Initialize all handSlotSame to safe value first
+    for(f=0; f<97; f++) if(handSlotSame[f] == 0) handSlotSame[f] = 11*21 + 4;
     for(f=WHITE; f<COLOR; f++) { // all pieces
 	r = handSlot[f];         // location in holdings where piece goes (flipped color)
 	handKey[f] = pieceKey[-1]*squareKey[r];
@@ -592,6 +594,9 @@ GameInit (char *name)
     }
     for(i=0; i<16; i++) handVal[WHITE+i] = handVal[BLACK+i] += pieceValues[WHITE+i];  // gain by capturing base piece
     // For same-color captures, piece doesn't flip color, so gain is just in-hand bonus
+    // Initialize all handValSame to 0 first
+    for(i=0; i<96; i++) handValSame[i] = 0;
+    for(i=0; i<96; i++) handKeySame[i] = 0;
     for(i=0, ip=variants[v].values; *ip >= 0; ip++); ip++; // skip to promoted values
     for(; *ip >= 0; ip++); ip++; // skip to in-hand values
     for(i=0; *ip >= 0; i++) {
@@ -599,8 +604,10 @@ GameInit (char *name)
 	ip++;
     }
     for(i=0; i<16; i++) {
-	int demoted = dropType[handSlotSame[WHITE+i+16]]-1;
-	handValSame[WHITE+i+16] = handValSame[BLACK+i+16] = pieceValues[WHITE+i+16] - pieceValues[demoted] + handValSame[demoted];
+	int demoted = dropType[handSlot[WHITE+i+16]]-1;  // use regular handSlot for promoted pieces
+	if(demoted >= 0 && demoted < 96) {
+	    handValSame[WHITE+i+16] = handValSame[BLACK+i+16] = pieceValues[WHITE+i+16] - pieceValues[demoted] + handValSame[demoted];
+	}
     }
     for(i=0; i<16; i++) {
 	int demoted = dropType[handSlot[WHITE+i+16]]-1; // piece type after demotion (could be Pawn, in Chess)
