@@ -104,6 +104,7 @@ int UnderProm;
 int pos[8]={3,0,1,2,4,5,6,7},pc[]={4,6,5,5,1,1,7,3},
     mask[]={0x18,0x81,0xAA,0x55,0xAA,0x55,0xFF,0xFF};
 int GameNr;
+int CurrentVariant = 0;  /* Track which variant is being played */
 char piecename[32], piecetype[32], defaultchar[]=".PPKNBRQEWFMACHG";
 
 int Ticks, tlim, Setup, SetupQ;
@@ -182,14 +183,47 @@ int k,q,l,e,E,z,n;      /* (q,l)=window, e=current eval. score, E=e.p. sqr.*/
       if(p<3&y==E)H=z&127;                     /* shift capt.sqr. H if e.p.*/
       t=b[H];
       if(flag&1+!t)                            /* mode (capt/nonc) allowed?*/
-      {if(t&&(t&16)==k)break;                  /* capture own              */
+      {int ownPieceCapture = t&&(t&16)==k;     /* capturing own piece? */
+       /* In gothic and capablanca, allow capturing own pieces except King */
+       if(ownPieceCapture && (CurrentVariant==4 || CurrentVariant==5) && (t&15)!=3)
+         ownPieceCapture = 0;                  /* allow own non-King capture */
+       if(ownPieceCapture)break;               /* disallow own piece capture */
        i=w[t&15]+((t&192)>>sh);                /* value of capt. piece t   */
+       /* Add hand piece bonuses for gothic/capablanca variants */
+       if((CurrentVariant==4 || CurrentVariant==5) && (t&64)) {
+         int pt = t&15;  /* piece type */
+         if(pt==1 || pt==2) i+=500;        /* Pawn: +5 pawns */
+         else if(pt==4) i+=400;             /* Knight: +4 pawns */
+         else if(pt==5) i+=300;             /* Bishop: +3 pawns */
+         else if(pt==6) i+=300;             /* Rook: +3 pawns */
+         else if(pt==7) i+=100;             /* Queen: +1 pawn */
+       }
        if(i<0)m=I,d=98;                        /* K capture                */
        if(m>=l&d>1)goto C;                     /* abort on fail high       */
        v=d-1?e:i-p;                            /*** MVV/LVA scoring if d=1**/
 //if(z&S,1)printf("%d:%d (%2x,%2x)  %6d\n",n,d,x,y,m);
        if(d-!t>1)                              /*** all captures if d=2  ***/
-       {v=centr[p]?b[x+257]-b[y+257]:0;        /* center positional pts.   */
+       {int handPiece = 0;  /* piece to store in hand for gothic/capablanca */
+        v=centr[p]?b[x+257]-b[y+257]:0;        /* center positional pts.   */
+        /* Handle captured pieces in gothic/capablanca */
+        if((CurrentVariant==4 || CurrentVariant==5) && t) {
+          int pieceType = t&15;
+          int capturedColor = t&16;
+          int isOwnCapture = (capturedColor == k);
+          /* Flip color for enemy captures, keep for own captures */
+          int handColor = isOwnCapture ? capturedColor : k;
+          /* Create hand piece: type + color + hand flag (bit 6) */
+          handPiece = pieceType | handColor | 64;
+          /* Store in hand area: 128-143 for WHITE, 144-159 for BLACK */
+          int handBase = (k==WHITE) ? 128 : 144;
+          int slot;
+          for(slot=handBase; slot<handBase+16; slot++) {
+            if(b[slot] == 0) {
+              b[slot] = handPiece;
+              break;
+            }
+          }
+        }
         b[G]=b[H]=b[x]=0;b[y]=u|32;            /* do move, set non-virgin  */
         if(!(G&S))b[FF]=k+6,v+=50;             /* castling: put R & score  */
         v-=w[p]>0|R<10?0:20;                   /*** freeze K in mid-game ***/
@@ -222,6 +256,18 @@ int k,q,l,e,E,z,n;      /* (q,l)=window, e=current eval. score, E=e.p. sqr.*/
          v=m;                                  /* (prevent fail-lows on    */
         }                                      /*   K-capt. replies)       */
         J=f;Z=g;
+        /* Undo hand storage for gothic/capablanca */
+        if((CurrentVariant==4 || CurrentVariant==5) && handPiece) {
+          int handBase = (k==WHITE) ? 128 : 144;
+          int slot;
+          /* Find and remove the hand piece we just added */
+          for(slot=handBase; slot<handBase+16; slot++) {
+            if(b[slot] == handPiece) {
+              b[slot] = 0;
+              break;
+            }
+          }
+        }
         b[G]=k+6;b[FF]=b[y]=0;b[x]=u;b[H]=t;   /* undo move,G can be dummy */
        }                                       /*          if non-castling */
        if(v>m)                                 /* new best, update max,best*/
@@ -387,7 +433,6 @@ void PrintVariants()
 int LoadGame(char *name)
 {
         int i, j, count=0; char c, buf[80];
-        static int currentVariant;
         FILE *f;
 
         f = fopen("fmax.ini", "r");
@@ -409,7 +454,7 @@ int LoadGame(char *name)
                    return; /* keep old settings */
                }
            }
-           currentVariant = count;
+           CurrentVariant = count;
         }
 
         /* We have found variant, or if none specified, are at beginning of file */
